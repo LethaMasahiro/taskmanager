@@ -30,6 +30,7 @@ services:
       - DATABASE_HOST=db  # Ensure this matches the PostgreSQL service name
       - DATABASE_PORT=${DATABASE_PORT}
       - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
     depends_on:
       - db  # Ensure this matches the PostgreSQL service name
       - redis
@@ -42,13 +43,14 @@ services:
     volumes:
       - .:/app
     environment:
-      - CELERY_BROKER_URL=redis://redis:6379/0
       - DJANGO_ENV=${DJANGO_ENV}
       - DATABASE_NAME=${DATABASE_NAME}
       - DATABASE_USER=${DATABASE_USER}
       - DATABASE_PASSWORD=${DATABASE_PASSWORD}
       - DATABASE_HOST=db  # Ensure this matches the PostgreSQL service name
       - DATABASE_PORT=${DATABASE_PORT}
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
     depends_on:
       - web
       - redis  
