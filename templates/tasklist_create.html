@@ -9,7 +9,7 @@
         <div class="container mt-5">
             <h2 class="text-center">Create a Task</h2>
             <br />
-            <form method="post" action="{% url 'createtask' %}" onsubmit="return validateForm()">
+            <form method="post" action="{% url 'task-create' %}" onsubmit="return validateForm()">
                 {% csrf_token %}
                 <div class="form-group">
                     <label for="taskTitle">Task Title:</label>

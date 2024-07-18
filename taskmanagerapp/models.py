@@ -12,16 +12,16 @@ class Task(models.Model):
     import datetime
 
     class Status(models.TextChoices):
-        TODO = 'To Do'
-        INPROGRESS = 'In Progress'
-        INREVIEW = 'In Review'
-        DONE = 'Done'
+        TODO = 'To Do', 'To Do'
+        IN_PROGRESS = 'In Progress', 'In Progress'
+        IN_REVIEW = 'In Review', 'In Review'
+        DONE = 'Done', 'Done'
 
     class Priority(models.TextChoices):
-        LOW = 'Low'
-        MODERATE = 'Moderate'
-        HIGH = 'High'
-        VERYHIGH = 'Very High'
+        LOW = 'Low', 'Low'
+        MEDIUM = 'Medium', 'Medium'
+        HIGH = 'High', 'High'
+        VERY_HIGH = 'Very High', 'Very High'
 
     title = models.CharField(max_length=250)
     description = models.TextField()

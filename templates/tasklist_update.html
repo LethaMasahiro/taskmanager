@@ -1,79 +1,77 @@
 <html lang="en">
-    <head>
-        <meta charset="UTF-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>Update Task</title> 
-        <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" />
-    </head>
-    <body>
-        <div class="container mt-5">
-            <h2 class="text-center">Update Task "{{ task.title }}"</h2>
-            <br />
-            <form method="post" action="{% url 'updatetask' task.id %}" onsubmit="return validateForm()" id="updateTaskForm">
-                {% csrf_token %}
-                <div class="form-group">
-                    <label for="taskTitle">Task Title:</label>
-                    <input type="text" class="form-control" id="taskTitle" name="title" value="{{task.title}}" required />
-                </div>
-                <div class="form-group">
-                    <label for="taskDescription">Task Description:</label>
-                    <textarea class="form-control" id="taskDescription" name="description">
-                        {{task.description}}
-                    </textarea>
-                </div>
-                <div class="form-group">
-                    <label for="taskStatus">Task Status:</label>
-                    <select class="form-control" id="taskStatus" name="status" value="{{task.status}}">
-                        {% for value, label in statuses %}
-                            <option value="{{ value }}">{{ label }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label for="assignee">Assigned To:</label>
-                    <select class="form-control" id="assignee" name="assignee" value="{{task.assignee}}">
-                        {% for user in users %}
-                            <option value="{{ user.id }}">{{ user.username }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label for="taskStartDate">Start Date:</label>
-                    <input type="datetime-local" class="form-control" id="taskStartDate" name="startDate" value="{{task.startDate|date:'Y-m-d\\TH:i' }}" required />
-                </div>
-                <div class="form-group">
-                    <label for="taskDeadline">Deadline:</label>
-                    <input type="datetime-local" class="form-control" id="taskDeadline" name="deadline" value="{{ task.deadline|date:'Y-m-d\\TH:i' }}" required />
-                </div>
-                <div class="form-group">
-                    <label for="taskPriority">Priority:</label>
-                    <select class="form-control" id="taskPriority" name="priority" value="{{task.priority}}">
-                        {% for value, label in priorities %}
-                            <option value="{{ value }}">{{ label }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <button type="submit" class="btn btn-primary">Update Task</button>
-            </form>
-        </div>
-        <script>
-            function validateForm() {
-                var startDate = document.getElementById('taskStartDate').value
-                var endDate = document.getElementById('taskDeadline').value
-            
-                if (new Date(startDate) >= new Date(endDate)) {
-                    alert('End date must be after the start date.');
-                    return false
-                }
-                return true
-            }
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Update Task</title> 
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" />
+</head>
+<body>
+    <div class="container mt-5">
+        <h2 class="text-center">Update Task "{{ task.title }}"</h2>
+        <br />
+        <form method="post" action="{% url 'task-update' task.id %}" onsubmit="return validateForm()" id="updateTaskForm">
+            {% csrf_token %}
+            <div class="form-group">
+                <label for="taskTitle">Task Title:</label>
+                <input type="text" class="form-control" id="taskTitle" name="title" value="{{task.title}}" required />
+            </div>
+            <div class="form-group">
+                <label for="taskDescription">Task Description:</label>
+                <textarea class="form-control" id="taskDescription" name="description" required>{{ task.description|slice:"0:" }}</textarea>
+            </div>
+            <div class="form-group">
+                <label for="taskStatus">Task Status:</label>
+                <select class="form-control" id="taskStatus" name="status">
+                    {% for value, label in statuses %}
+                        <option value="{{ value }}" {% if task.status == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="assignee">Assigned To:</label>
+                <select class="form-control" id="assignee" name="assignee">
+                    {% for user in users %}
+                        <option value="{{ user.id }}" {% if task.assignee.id == user.id %}selected{% endif %}>{{ user.username }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="taskStartDate">Start Date:</label>
+                <input type="datetime-local" class="form-control" id="taskStartDate" name="startDate" value="{{ task.startDate|date:'Y-m-d\\TH:i' }}" required />
+            </div>
+            <div class="form-group">
+                <label for="taskDeadline">Deadline:</label>
+                <input type="datetime-local" class="form-control" id="taskDeadline" name="deadline" value="{{ task.deadline|date:'Y-m-d\\TH:i' }}" required />
+            </div>
+            <div class="form-group">
+                <label for="taskPriority">Priority:</label>
+                <select class="form-control" id="taskPriority" name="priority">
+                    {% for value, label in priorities %}
+                        <option value="{{ value }}" {% if task.priority == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <button type="submit" class="btn btn-primary">Update Task</button>
+        </form>
+    </div>
+    <script>
+        function validateForm() {
+            var startDate = document.getElementById('taskStartDate').value;
+            var endDate = document.getElementById('taskDeadline').value;
 
-             // Add task listener to form submission for validation
-            /*document.getElementById('updateTaskForm').addtaskListener('submit', function (task) {
-                if (!validateEndDate()) {
-                task.prtaskDefault() // Prtask form submission if validation fails
-                }
-            })*/
-        </script>
-    </body>
+            if (new Date(startDate) >= new Date(endDate)) {
+                alert('End date must be after the start date.');
+                return false;
+            }
+            return true;
+        }
+
+        // Add event listener to form submission for validation
+        document.getElementById('updateTaskForm').addEventListener('submit', function (event) {
+            if (!validateForm()) {
+                event.preventDefault(); // Prevent form submission if validation fails
+            }
+        });
+    </script>
+</body>
 </html>

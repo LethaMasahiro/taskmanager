@@ -7,7 +7,7 @@
     </head>
     <body>
         <div class="container">
-            <h2 class="text-center">{{request.user.username}}'s tasks</h2>
+            <h2 class="text-center">Admin View: Tasks</h2>
             <br />
             <div class="mb-3">
                 <a href="{% url 'logout' %}" class="btn btn-danger ml-2">Logout</a>
@@ -20,6 +20,7 @@
                     <tr>
                         <th>Task Title</th>
                         <th>Task Description</th>
+                        <th>Assignee</th>
                         <th>Status</th>
                         <th>Time left</th>
                         <th>Priority</th>
@@ -31,6 +32,7 @@
                     <tr>
                         <td>{{ task.title }}</td>
                         <td>{{ task.description }}</td>
+                        <td>{{ task.assignee_name }}</td>
                         <td>{{ task.status }}</td>
                         <td>
                             <div id="countdown_{{ task.id }}" class="countdown-timer" data-start-date="{{ task.startDate|date:'Y-m-d H:i:s' }}"></div>

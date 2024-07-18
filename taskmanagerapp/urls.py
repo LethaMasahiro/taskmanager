@@ -18,14 +18,15 @@ urlpatterns = [
     path('login/', views.user_login, name='login'),
     path('signup/', views.user_signup, name='signup'),
     path('logout/', views.user_logout, name='logout'),
+    path('index/admin', views.admin_index, name='admin-index'),
     path('tasklist/', views.user_tasklist, name='tasklist'),
-    path('createtask/', views.task_create, name='createtask'),
-    path('updatetask/<int:task_id>/', views.task_update, name='updatetask'),
-    path('deletetask/<int:task_id>/', views.task_delete, name='deletetask'),
+    path('tasklist/admin/', views.admin_tasklist, name='admin-tasklist'),
+    path('createtask/', views.task_create, name='task-create'),
+    path('updatetask/<int:task_id>/', views.task_update, name='task-update'),
+    path('deletetask/<int:task_id>/', views.task_delete, name='task-delete'),
     #path('', include(router.urls)),
     path('api/tasks/', TaskListApiView.as_view(), name='task-list-api'),
     path('api/tasks/<int:pk>/', TaskListApiView.as_view(), name='task-detail-api'),
     path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
-    path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
-    path('hello/', views.hello, name='hello')
+    path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh')
 ]

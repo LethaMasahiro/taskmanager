@@ -26,7 +26,11 @@ def index(request):
 def is_admin(user):
     return user.is_superuser
 
-admin_required = user_passes_test(lambda user: user.is_superuser)
+def admin_required(view_func):
+    decorated_view_func = login_required(user_passes_test(lambda user: user.is_superuser)(view_func))
+    return decorated_view_func
+
+# admin_required = user_passes_test(lambda user: user.is_superuser)
 
 #user login
 def user_login(request):
@@ -39,7 +43,7 @@ def user_login(request):
             if user:
                 login(request, user)
                 if user.is_superuser:
-                    return redirect('all_tasklist')
+                    return redirect('admin-index')
                 return redirect('tasklist')
     else:
         form = LoginForm()
@@ -61,31 +65,54 @@ def user_logout(request):
     logout(request)
     return redirect('login')
 
-#user task list
 @login_required
-def user_tasklist(request):
-    # tasks = Task.objects.filter(assignee=request.user)
+@admin_required
+def admin_index(request):
+    return render(request, 'index_admin.html')
+
+#admin task list
+@login_required
+@admin_required
+def admin_tasklist(request):
 
     # Generate JWT token for the user
     refresh = RefreshToken.for_user(request.user)
     access_token = str(refresh.access_token)
     headers = {'Authorization': f'Bearer {access_token}'}
 
-    # Get the user ID
-    user_id = request.user.id
+    response = requests.get(f'http://localhost:8000/api/tasks/', headers=headers)
 
-    response = requests.get(f'http://localhost:8000/api/tasks/?assignee={user_id}', headers=headers)
+    if response.status_code == 200:
+        tasks = response.json()
+        for task in tasks:
+            assignee_id = task['assignee']
+            assignee = User.objects.get(id=assignee_id)
+            task['assignee_name'] = assignee.username
+        return render(request, 'tasklist_admin.html', {'tasks': tasks})
+    else:
+        return render(request, 'tasklist.html', {'error': 'Failed to retrieve tasks'})
+    
+
+#user task list
+@login_required
+def user_tasklist(request):
+    assignee_id = request.GET.get('assignee', request.user.id)
+
+    refresh = RefreshToken.for_user(request.user)
+    access_token = str(refresh.access_token)
+    headers = {'Authorization': f'Bearer {access_token}'}
+
+    response = requests.get(f'http://localhost:8000/api/tasks/?assignee={assignee_id}', headers=headers)
 
     if response.status_code == 200:
         tasks = response.json()
         return render(request, 'tasklist.html', {'tasks': tasks})
-    
     else:
-        print(f"Error: {response.status_code} - {response.text}")
         return render(request, 'tasklist.html', {'error': 'Failed to retrieve tasks'})
 
 #create task
 @login_required
+@admin_required
 def task_create(request):
     if request.method == 'POST':
 
@@ -111,7 +138,7 @@ def task_create(request):
             assignee_email = response.json().get('assignee_email')
             send_task_email_to_assignee(assignee_email, data['title'])
 
-            return redirect('tasklist')
+            return redirect('admin-tasklist')
         
         else:
             print(f"Error: {response.status_code} - {response.text}")
@@ -126,6 +153,7 @@ def task_create(request):
 
 #Todo: Update task
 @login_required
+@admin_required
 def task_update(request, task_id):
     current_task = get_object_or_404(Task, pk=task_id)
     if request.method == 'POST':
@@ -157,7 +185,7 @@ def task_update(request, task_id):
             assignee_email = response.json().get('assignee_email')
             send_task_email_to_assignee(assignee_email, data['title'])
 
-            return redirect('tasklist')
+            return redirect('admin-tasklist')
         
         else:
             print(f"Error: {response.status_code} - {response.text}")
@@ -185,7 +213,7 @@ def task_delete(request, task_id):
         response = requests.delete(f'http://localhost:8000/api/tasks/{task_id}/', headers=headers)
 
         if response.status_code == 204:
-            return redirect('tasklist')
+            return redirect('admin-tasklist')
         
         else:
             print(f"Error: {response.status_code} - {response.text}")
@@ -205,17 +233,25 @@ class TaskListApiView(APIView):
 
     # 1. List all todos
     def get(self, request, *args, **kwargs):
-        
+
         assignee_id = request.query_params.get('assignee', None)
-        if assignee_id:
-            tasks = Task.objects.filter(assignee=assignee_id)
+        if request.user.is_superuser and not assignee_id:
+            tasks = Task.objects.all()
         else:
-            tasks = Task.objects.filter(assignee=request.user.id)
+            if assignee_id:
+                tasks = Task.objects.filter(assignee=assignee_id)
+            else:
+                tasks = Task.objects.filter(assignee=request.user.id)
 
         serializer = TaskSerializer(tasks, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
     
+    
     def post(self, request, *args, **kwargs):  
+
+        if not request.user.is_superuser:
+            return Response({'detail': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+
         serializer = TaskSerializer(data=request.data)
         if serializer.is_valid():
             task = serializer.save()
@@ -230,6 +266,10 @@ class TaskListApiView(APIView):
         
     # 3. Update an existing task
     def put(self, request, *args, **kwargs):
+
+        if not request.user.is_superuser:
+            return Response({'detail': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+        
         task = self.get_task(kwargs.get('pk'))
         serializer = TaskSerializer(task, data=request.data, partial=False)  # Full update
         if serializer.is_valid():
@@ -241,6 +281,11 @@ class TaskListApiView(APIView):
     
     #partially update a task
     def patch(self, request, *args, **kwargs):
+
+        if not request.user.is_superuser:
+            return Response({'detail': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+        
+
         task = self.get_task(kwargs.get('pk'))
         serializer = TaskSerializer(task, data=request.data, partial=True)  # Partial update
         if serializer.is_valid():
@@ -251,6 +296,10 @@ class TaskListApiView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
     def delete(self, request, *args, **kwargs):
+
+        if not request.user.is_superuser:
+            return Response({'detail': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+
         task = self.get_task(kwargs.get('pk'))
         task.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
@@ -258,10 +307,6 @@ class TaskListApiView(APIView):
     #self method: get the task
     def get_task(self, pk):
         return get_object_or_404(Task, pk=pk)
-
-
-def hello(request):
-    return HttpResponse("Hello, World!")
 
 from .tasks import my_task
 
