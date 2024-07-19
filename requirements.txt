@@ -5,3 +5,4 @@ redis==5.0.1
 djangorestframework
 requests
 djangorestframework-simplejwt
+django-cors-headers

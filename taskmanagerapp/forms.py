@@ -8,7 +8,7 @@ class SignupForm(UserCreationForm):
 
     class Meta: #specifies the model to be used, which is the default User model
         model = User
-        fields = ['username', 'email', 'password', 'password2'] #password2 is the password confirmation
+        fields = ['username', 'email', 'password1', 'password2'] #password2 is the password confirmation
 
     def save(self, commit=True):
         user = super(SignupForm, self).save(commit=False)

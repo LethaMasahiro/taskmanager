@@ -93,7 +93,10 @@ def admin_tasklist(request):
         return render(request, 'tasklist.html', {'error': 'Failed to retrieve tasks'})
     
 
-#user task list
+# Convert Task.Status choices to a list of dictionaries
+def get_status_choices():
+    return [{'id': choice.value, 'name': choice.label} for choice in Task.Status]
+
 @login_required
 def user_tasklist(request):
     assignee_id = request.GET.get('assignee', request.user.id)
@@ -106,10 +109,15 @@ def user_tasklist(request):
 
     if response.status_code == 200:
         tasks = response.json()
-        return render(request, 'tasklist.html', {'tasks': tasks})
+        status_choices = get_status_choices()  # Convert status choices to JSON-serializable format
+        return render(request, 'tasklist.html', {
+            'tasks': tasks,
+            'access_token': access_token,
+            'status_choices': status_choices,
+        })
     else:
         return render(request, 'tasklist.html', {'error': 'Failed to retrieve tasks'})
-
+    
 #create task
 @login_required
 @admin_required
@@ -235,6 +243,9 @@ class TaskListApiView(APIView):
     def get(self, request, *args, **kwargs):
 
         assignee_id = request.query_params.get('assignee', None)
+        sort_by = request.query_params.get('sort', 'deadline')  # Default sorting by deadline
+        order = request.query_params.get('order', 'asc')  # Default order ascending
+
         if request.user.is_superuser and not assignee_id:
             tasks = Task.objects.all()
         else:
@@ -242,6 +253,16 @@ class TaskListApiView(APIView):
                 tasks = Task.objects.filter(assignee=assignee_id)
             else:
                 tasks = Task.objects.filter(assignee=request.user.id)
+
+        # Sorting logic
+        if sort_by in ['title', 'status', 'startDate', 'deadline', 'priority']:
+            if order == 'desc':
+                tasks = tasks.order_by(f'-{sort_by}')
+            else:
+                tasks = tasks.order_by(sort_by)
+        else:
+            # Handle invalid sort field gracefully (default to deadline)
+            tasks = tasks.order_by('deadline')
 
         serializer = TaskSerializer(tasks, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
@@ -281,12 +302,12 @@ class TaskListApiView(APIView):
     
     #partially update a task
     def patch(self, request, *args, **kwargs):
-
-        if not request.user.is_superuser:
-            return Response({'detail': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
-        
-
         task = self.get_task(kwargs.get('pk'))
+
+        # Check if the user is either the assignee or a superuser
+        if not request.user.is_superuser and task.assignee != request.user:
+            return Response({'detail': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+
         serializer = TaskSerializer(task, data=request.data, partial=True)  # Partial update
         if serializer.is_valid():
             serializer.save()

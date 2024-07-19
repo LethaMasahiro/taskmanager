@@ -4,6 +4,11 @@
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <title>Tasklist</title> 
         <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" />
+        <style>
+            .sortable {
+                cursor: pointer; /* Change cursor to pointer on hover */
+            }
+        </style>
     </head>
     <body>
         <div class="container">
@@ -11,19 +16,19 @@
             <br />
             <div class="mb-3">
                 <a href="{% url 'logout' %}" class="btn btn-danger ml-2">Logout</a>
-            </div>
-            <div class="mb-3">
-                <a href="{% url 'task-create' %}" class="btn btn-danger ml-2">Create New Task</a>
+                {% if request.user.is_superuser %}
+                <a href="{% url 'admin-index' %}" class="btn btn-primary ml-2">Back</a>
+                {% endif %}
             </div>
             <table id="taskTable" class="table">
                 <thead>
                     <tr>
-                        <th>Task Title</th>
+                        <th class="sortable" data-sort="title">Task Title <span class="sort-arrow"></span></th>
                         <th>Task Description</th>
-                        <th>Status</th>
-                        <th>Time left</th>
-                        <th>Priority</th>
-                        <th>Actions</th>
+                        <th class="sortable" data-sort="status">Status <span class="sort-arrow"></span></th>
+                        <th class="sortable" data-sort="startDate">Start Date <span class="sort-arrow"></span></th>
+                        <th class="sortable" data-sort="deadline">Deadline <span class="sort-arrow"></span></th>
+                        <th class="sortable" data-sort="priority">Priority <span class="sort-arrow"></span></th>
                     </tr>
                 </thead>
                 <tbody>
@@ -31,58 +36,188 @@
                     <tr>
                         <td>{{ task.title }}</td>
                         <td>{{ task.description }}</td>
-                        <td>{{ task.status }}</td>
                         <td>
-                            <div id="countdown_{{ task.id }}" class="countdown-timer" data-start-date="{{ task.startDate|date:'Y-m-d H:i:s' }}"></div>
+                            <select class="form-control status-dropdown" data-task-id="{{ task.id }}">
+                                {% for choice in status_choices %}
+                            <option value="{{ choice.id }}" {% if choice.id == task.status %}selected{% endif %}>
+                                {{ choice.name }}
+                            </option>
+                            {% endfor %}
+                            </select>    
                         </td>
+                        <td class="start-date" data-date="{{ task.startDate }}"></td>
+                        <td class="deadline-date" data-date="{{ task.deadline }}"></td>
                         <td>{{ task.priority }}</td>
-                        <td>
-                            <a href="{% url 'task-update' task.id %}" class="btn btn-info btn-sm">Update</a>
-
-                            <form method="post" action="{% url 'task-delete' task.id %}" style="display: inline;" onsubmit="return confirmDelete('{{ task.title }}')">
-                                {% csrf_token %}
-                                <button type="submit" class="btn btn-danger btn-sm">Delete</button>
-                            </form>
-                        </td>
                     </tr>
                     {% endfor %}
                 </tbody>
             </table>
         </div>
 
-        <script>
-            function updateCountdownTimers() {
-                document.querySelectorAll('.countdown-timer').forEach(timer => {
-                    // Get the start date of the task and convert it to a JavaScript Date object
-                    var startdate = new Date(timer.getAttribute('data-start-date'));
-                    var now = new Date();
+        <!-- Include this inside my <body> tag or just before my script -->
+        {{ status_choices|json_script:"status-choices" }}
+        <script status_choices="{{ status_choices }}">
+            const data = document.currentScript.dataset;
+            var context = {
+                status_choices: JSON.parse(document.getElementById('status-choices').textContent)
+            };
 
-                    // Calculate the time difference between now and the start date
-                    var timeDiff = startdate - now;
-
-                    // If the task has not started yet, display the countdown timer
-                    if (timeDiff > 0) {
-                        var days = Math.floor(timeDiff / (1000 * 60 * 60 * 24));
-                        var hours = Math.floor((timeDiff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-                        var minutes = Math.floor((timeDiff % (1000 * 60 * 60)) / (1000 * 60));
-                        var seconds = Math.floor((timeDiff % (1000 * 60)) / 1000);
-
-                        // Display the countdown timer in the format: DD:HH:MM:SS
-                        timer.innerText = days + "d " + hours + "h " + minutes + "m " + seconds + "s ";
-                    } else {
-                        // If the task has already started, display a message indicating that it has started
-                        timer.innerText = "Task has started";
-                    }
+            // format date to format D/M/Y H:i
+            function formatDate(dateString) {
+                var options = { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' };
+                var date = new Date(dateString);
+                return date.toLocaleDateString('en-GB', options).replace(',', '');
+            }
+    
+            document.addEventListener('DOMContentLoaded', function() {
+                document.querySelectorAll('.start-date').forEach(function(element) {
+                    element.innerText = formatDate(element.getAttribute('data-date'));
                 });
-            }
+                document.querySelectorAll('.deadline-date').forEach(function(element) {
+                    element.innerText = formatDate(element.getAttribute('data-date'));
+                });
 
-            //pop-up alert
-            function confirmDelete(taskTitle) {
-                return confirm('Are you sure you want to delete task "' + taskTitle + '"?');
-            }
+                // Handle status change
+                document.querySelectorAll('.status-dropdown').forEach(function(dropdown) {
+                    dropdown.addEventListener('change', function() {
+                        var taskId = this.getAttribute('data-task-id');
+                        var newStatus = this.value;
+                        var csrfToken = '{{ csrf_token }}';
 
-                // Call the updateCountdownTimers function every second to update the countdown timers in real-time
-                setInterval(updateCountdownTimers, 1000);
+                        fetch(`/api/tasks/${taskId}/`, {
+                            method: 'PATCH',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-CSRFToken': csrfToken
+                            },
+                            body: JSON.stringify({ status: newStatus })
+                        })
+                        .then(response => {
+                            if (response.ok) {
+                                return response.json();
+                            } else {
+                                throw new Error('Failed to update status');
+                            }
+                        })
+                        .then(data => {
+                            document.getElementById(`statusDropdown${taskId}`).textContent = data.status;
+                        })
+                        .catch(error => {
+                            console.error('Error:', error);
+                        });
+                    });
+                });
+
+                function updateTable(tasks) {
+                    var tbody = document.querySelector('#taskTable tbody');
+                    
+                    // Clear existing rows
+                    tbody.innerHTML = '';
+
+                    // Add rows based on sorted data
+                    tasks.forEach(task => {
+                        var row = document.createElement('tr');
+
+                        // Generate status options dynamically
+                        var statusOptions = '';
+                        context.status_choices.forEach(choice => {
+                            var selected = choice.id === task.status ? 'selected' : '';
+                            statusOptions += `<option value="${choice.id}" ${selected}>${choice.name}</option>`;
+                        });
+                        
+                        // Create cells for each column
+                        row.innerHTML = `
+                            <td>${task.title}</td>
+                            <td>${task.description}</td>
+                            <td>
+                                 <select class="form-control status-dropdown" data-task-id="${task.id}">
+                                    ${statusOptions}
+                                </select>
+                            </td>
+                            <td class="start-date" data-date="${task.startDate}">${formatDate(task.startDate)}</td>
+                            <td class="deadline-date" data-date="${task.deadline}">${formatDate(task.deadline)}</td>
+                            <td>${task.priority}</td>
+                        `;
+
+                        // Append row to tbody
+                        tbody.appendChild(row);
+                    });
+
+                    // Reattach event listeners (especially for status dropdown)
+                    attachEventListeners();
+                }
+
+                // Function to create options for status dropdown
+                function createStatusOptions(selectedStatus) {
+                    var optionsHTML = '';
+
+                    // Iterate through each status choice
+                    Task.Status.choices.forEach(status => {
+                        var selected = status === selectedStatus ? 'selected' : '';
+                        optionsHTML += `<option value="${status}" ${selected}>${status}</option>`;
+                    });
+
+                    return optionsHTML;
+                }
+
+
+                // Sorting functionality
+                function handleSorting(header) {
+                    header.addEventListener('click', function(event) {
+                        var sortBy = header.getAttribute('data-sort');
+                        var sortOrder = header.classList.contains('asc') ? 'desc' : 'asc';
+                        var assignee = '{{ request.user.id }}';
+
+                        // Remove sorting indicator from all headers
+                        document.querySelectorAll('.sortable').forEach(function(elem) {
+                            elem.classList.remove('asc', 'desc');
+                            elem.querySelector('.sort-arrow').innerHTML = '';
+                        });
+
+                        // Set sorting indicator on the clicked header
+                        header.classList.add(sortOrder === 'asc' ? 'asc' : 'desc');
+                        header.querySelector('.sort-arrow').innerHTML = sortOrder === 'asc' ? '&#x25B2;' : '&#x25BC;';
+
+                        // Construct URL with sort and order parameters
+                        var url = `/api/tasks/?assignee=${assignee}&sort=${sortBy}&order=${sortOrder}`;
+
+                        // Fetch sorted data from backend
+                        fetch(url, {
+                            method: 'GET',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-CSRFToken': '{{ csrf_token }}'
+                                // Add any other headers as needed
+                            }
+                        })
+                        .then(response => {
+                            if (response.ok) {
+                                return response.json();
+                            } else {
+                                throw new Error('Failed to fetch sorted data');
+                            }
+                        })
+                        .then(data => {
+                            // Update table with sorted data (assuming you update this part based on your API response)
+                            console.log('Sorted data:', data);
+                            // Example: Replace table content with sorted data
+                            updateTable(data);
+                        })
+                        .catch(error => {
+                            console.error('Error:', error);
+                        });
+                    });
+                }
+
+                // Attach sorting event listeners to all sortable headers
+                document.querySelectorAll('.sortable').forEach(function(header) {
+                    handleSorting(header);
+                });
+
+                // Sort by deadline column by default on page load
+                var deadlineHeader = document.querySelector('th[data-sort="deadline"]');
+                handleSorting(deadlineHeader);
+            });
         </script>
         <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.16.0/umd/popper.min.js"></script>
