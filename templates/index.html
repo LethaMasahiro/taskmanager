@@ -1,9 +1,47 @@
-{% if request.user.is_authenticated %}
-  <p>{{ request.user.username }}</p>
-  <a href="{% url 'logout' %}">Logout</a>
-{% else %}
-  <a href="{% url 'login' %}">Login</a>
-  <a href="{% url 'signup' %}">Signup</a>
-{% endif %}
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+      <meta charset="UTF-8" />
+      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <title>Index</title> 
+      <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" />
+      <style>
+        .container{
+          text-align: center;
+        }
+      </style>
+  </head>
+  <body>
+    <div class="container">
+      {% if request.user.is_authenticated %}
+          {% if request.user.is_superuser %}
+            <div class="container" style="text-align:center;">
+              <h1>Welcome {{request.user.username}}!</h1>
+              <br />
+              <div class="row" style="width: 50%; margin: auto;">
+                  <div class="col">
+                      <a href="{% url 'logout' %}" class="btn btn-danger ml-2">Logout</a>
+                  </div>
+                  <div class="col">
+                      <a href="{% url 'admin-tasklist' %}" class="btn btn-info ml-2">Admin View</a>
+                  </div>
+                  <div class="col">
+                      <a href="{% url 'tasklist' %}?assignee={{request.user.id}}" class="btn btn-info ml-2">User View</a>
+                  </div>
+              </div>
+          </div>
+          {% else %}
+            <p>Redirecting to your task list...</p>
+          {% endif %}
+      {% else %}
+        <h1>Welcome Guest!</h1>
+        <a href="{% url 'login' %}">Login</a>
+        <a href="{% url 'signup' %}">Signup</a>
+      {% endif %}
+    </div>
 
-<h1>Welcome!</h1>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.16.0/umd/popper.min.js"></script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+  </body>
+</html>

@@ -24,7 +24,6 @@ urlpatterns = [
     path('createtask/', views.task_create, name='task-create'),
     path('updatetask/<int:task_id>/', views.task_update, name='task-update'),
     path('deletetask/<int:task_id>/', views.task_delete, name='task-delete'),
-    #path('', include(router.urls)),
     path('api/tasks/', TaskListApiView.as_view(), name='task-list-api'),
     path('api/tasks/<int:pk>/', TaskListApiView.as_view(), name='task-detail-api'),
     path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),

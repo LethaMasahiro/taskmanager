@@ -2,10 +2,11 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.contrib.auth.models import User
+from django.http import JsonResponse
 from django.urls import reverse
 from .forms import SignupForm, LoginForm
 from .models import Task
-from .tasks import send_task_email_to_assignee
+from .tasks import send_task_email_to_assignee_created, send_task_email_to_assignee_updated, notify_superusers_of_task_updated, warn_users_one_day_before_deadline
 from rest_framework import viewsets
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -13,6 +14,8 @@ from rest_framework import status
 from rest_framework import permissions
 from .serializers import TaskSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
+from datetime import timedelta, datetime
+from django.utils.timezone import make_aware, make_naive
 import requests
 
 # Create your views here.
@@ -20,6 +23,8 @@ from django.http import HttpResponse
 
 #Homepage
 def index(request):
+    if not (request.user.is_superuser):
+        return redirect('tasklist')
     return render(request, 'index.html')
 
 #admin check
@@ -43,7 +48,7 @@ def user_login(request):
             if user:
                 login(request, user)
                 if user.is_superuser:
-                    return redirect('admin-index')
+                    return redirect('home')
                 return redirect('tasklist')
     else:
         form = LoginForm()
@@ -74,7 +79,6 @@ def admin_index(request):
 @login_required
 @admin_required
 def admin_tasklist(request):
-
     # Generate JWT token for the user
     refresh = RefreshToken.for_user(request.user)
     access_token = str(refresh.access_token)
@@ -140,18 +144,25 @@ def task_create(request):
         headers = {'Authorization': f'Bearer {access_token}'}
 
         response = requests.post(f'http://localhost:8000/api/tasks/', data=data, headers=headers)
+        # Print status and text for debugging
+        print(f"Status: {response.status_code} - {response.text}")
 
-        if response.status_code == 201:
-            # Get the email of the assignee
-            assignee_email = response.json().get('assignee_email')
-            send_task_email_to_assignee(assignee_email, data['title'])
-
-            return redirect('admin-tasklist')
-        
+        # Handle JSON decoding with exception handling
+        try:
+            response_data = response.json()
+        except ValueError as e:
+            print(f"JSON decode error: {e}")
+            response_data = {"error": "Failed to decode response as JSON."}
+            response_status = 500  # Internal Server Error
         else:
-            print(f"Error: {response.status_code} - {response.text}")
+            response_status = response.status_code
+
+        if response_status == 201:
+            return redirect('admin-tasklist')
+        else:
+            print(f"Error: {response_status} - {response.text}")
             print(f"Sent Data: {data}")
-            return render(request, 'tasklist_create.html', {'error': response.json()})
+            return render(request, 'tasklist_create.html', {'error': response_data})
 
     else:
         users = User.objects.all()
@@ -189,10 +200,6 @@ def task_update(request, task_id):
         response = requests.patch(f'http://localhost:8000/api/tasks/{task_id}/', json=data, headers=headers)
 
         if response.status_code == 200:
-            # Get the email of the assignee
-            assignee_email = response.json().get('assignee_email')
-            send_task_email_to_assignee(assignee_email, data['title'])
-
             return redirect('admin-tasklist')
         
         else:
@@ -255,7 +262,7 @@ class TaskListApiView(APIView):
                 tasks = Task.objects.filter(assignee=request.user.id)
 
         # Sorting logic
-        if sort_by in ['title', 'status', 'startDate', 'deadline', 'priority']:
+        if sort_by in ['title', 'assignee', 'status', 'startDate', 'deadline', 'priority']:
             if order == 'desc':
                 tasks = tasks.order_by(f'-{sort_by}')
             else:
@@ -274,11 +281,29 @@ class TaskListApiView(APIView):
             return Response({'detail': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
 
         serializer = TaskSerializer(data=request.data)
+
         if serializer.is_valid():
             task = serializer.save()
             response_data = serializer.data
-            # get email of the assignee to send an email
+
+            # Convert startDate and deadline to naive datetimes if necessary
+            deadline = datetime.fromisoformat(request.data['deadline'])
+
             response_data['assignee_email'] = task.assignee.email
+
+            send_task_email_to_assignee_created.delay(task.assignee.email, task.assignee.username, task.title, task.startDate, task.deadline)
+
+            # Calculate notify_time as 24 hours before the task deadline
+            notify_time = deadline - timedelta(days=1)
+
+            if notify_time > datetime.now():
+                warn_users_one_day_before_deadline.apply_async(
+                    (task.assignee.email, task.assignee.username, task.title, task.deadline),
+                    eta=notify_time
+                )
+            else:
+                print("Deadline is too soon to schedule a warning email.")
+
             return Response(response_data, status=status.HTTP_201_CREATED)
         
         else:
@@ -296,7 +321,27 @@ class TaskListApiView(APIView):
         if serializer.is_valid():
             serializer.save()
             response_data = serializer.data
+
+            # Convert startDate and deadline to naive datetimes if necessary
+            deadline = datetime.fromisoformat(request.data['deadline'])
+
             response_data['assignee_email'] = task.assignee.email
+
+            # Notify the assignee
+            send_task_email_to_assignee_created.delay(task.assignee.email, task.assignee.username, task.title, task.startDate, task.deadline)
+
+            #schedule deadline warning task
+            # Calculate notify_time as 24 hours before the task deadline
+            notify_time = deadline - timedelta(days=1)
+
+            if notify_time > datetime.now():
+                warn_users_one_day_before_deadline.apply_async(
+                    (task.assignee.email, task.assignee.username, task.title, task.deadline),
+                    eta=notify_time
+                )
+            else:
+                print("Deadline is too soon to schedule a warning email.")
+
             return Response(response_data, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
@@ -312,7 +357,30 @@ class TaskListApiView(APIView):
         if serializer.is_valid():
             serializer.save()
             response_data = serializer.data
+
+            # Convert startDate and deadline to naive datetimes if necessary
+            deadline = datetime.fromisoformat(request.data['deadline'])
+
             response_data['assignee_email'] = task.assignee.email
+
+            # Notify the assignee
+            send_task_email_to_assignee_updated.delay(task.assignee.email, task.assignee.username, task.title)
+
+            # Notify superusers
+            notify_superusers_of_task_updated.delay(task.title, request.user.username)
+
+            #schedule deadline warning task
+            # Calculate notify_time as 24 hours before the task deadline
+            notify_time = deadline - timedelta(days=1)
+
+            if notify_time > datetime.now():
+                warn_users_one_day_before_deadline.apply_async(
+                    (task.assignee.email, task.assignee.username, task.title, task.deadline),
+                    eta=notify_time
+                )
+            else:
+                print("Deadline is too soon to schedule a warning email.")
+
             return Response(response_data, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
@@ -328,7 +396,15 @@ class TaskListApiView(APIView):
     #self method: get the task
     def get_task(self, pk):
         return get_object_or_404(Task, pk=pk)
+    
+    def schedule_warning_email(self, task, deadline):
+        # Calculate notify_time as 24 hours before the task deadline
+        notify_time = deadline - timedelta(days=1)
 
-from .tasks import my_task
-
-result = my_task.delay(3, 5)
+        if notify_time > datetime.now():
+            warn_users_one_day_before_deadline.apply_async(
+                (task.assignee.email, task.assignee.username, task.title, task.deadline),
+                eta=notify_time
+            )
+        else:
+            print("Deadline is too soon to schedule a warning email.")

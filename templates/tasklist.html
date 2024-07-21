@@ -147,19 +147,6 @@
                     attachEventListeners();
                 }
 
-                // Function to create options for status dropdown
-                function createStatusOptions(selectedStatus) {
-                    var optionsHTML = '';
-
-                    // Iterate through each status choice
-                    Task.Status.choices.forEach(status => {
-                        var selected = status === selectedStatus ? 'selected' : '';
-                        optionsHTML += `<option value="${status}" ${selected}>${status}</option>`;
-                    });
-
-                    return optionsHTML;
-                }
-
 
                 // Sorting functionality
                 function handleSorting(header) {

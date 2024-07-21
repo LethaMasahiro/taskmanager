@@ -1,93 +1,183 @@
+<!DOCTYPE html>
 <html lang="en">
-    <head>
-        <meta charset="UTF-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>Tasklist</title> 
-        <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" />
-    </head>
-    <body>
-        <div class="container">
-            <h2 class="text-center">Admin View: Tasks</h2>
-            <br />
-            <div class="mb-3">
-                <a href="{% url 'logout' %}" class="btn btn-danger ml-2">Logout</a>
-            </div>
-            <div class="mb-3">
-                <a href="{% url 'task-create' %}" class="btn btn-danger ml-2">Create New Task</a>
-            </div>
-            <table id="taskTable" class="table">
-                <thead>
-                    <tr>
-                        <th>Task Title</th>
-                        <th>Task Description</th>
-                        <th>Assignee</th>
-                        <th>Status</th>
-                        <th>Time left</th>
-                        <th>Priority</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for task in tasks %}
-                    <tr>
-                        <td>{{ task.title }}</td>
-                        <td>{{ task.description }}</td>
-                        <td>{{ task.assignee_name }}</td>
-                        <td>{{ task.status }}</td>
-                        <td>
-                            <div id="countdown_{{ task.id }}" class="countdown-timer" data-start-date="{{ task.startDate|date:'Y-m-d H:i:s' }}"></div>
-                        </td>
-                        <td>{{ task.priority }}</td>
-                        <td>
-                            <a href="{% url 'task-update' task.id %}" class="btn btn-info btn-sm">Update</a>
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tasklist</title> 
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" />
+</head>
+<body>
+    <div class="container">
+        <h2 class="text-center">Admin View: Tasks</h2>
+        <br />
+        <div class="mb-3">
+            <a href="{% url 'logout' %}" class="btn btn-danger ml-2">Logout</a>
+            <a href="{% url 'admin-index' %}" class="btn btn-primary ml-2">Back</a>
+            <a href="{% url 'task-create' %}" class="btn btn-danger ml-2">Create New Task</a>
+        </div>
+        <table id="taskTable" class="table">
+            <thead>
+                <tr>
+                    <th class="sortable" data-sort="title">Task Title <span class="sort-arrow"></span></th>
+                    <th>Task Description</th>
+                    <th class="sortable" data-sort="assignee">Assignee <span class="sort-arrow"></span></th>
+                    <th class="sortable" data-sort="status">Status <span class="sort-arrow"></span></th>
+                    <th class="sortable" data-sort="startDate">Start Date <span class="sort-arrow"></span></th>
+                    <th class="sortable" data-sort="deadline">Deadline <span class="sort-arrow"></span></th>
+                    <th class="sortable" data-sort="priority">Priority <span class="sort-arrow"></span></th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for task in tasks %}
+                <tr>
+                    <td>{{ task.title }}</td>
+                    <td>{{ task.description }}</td>
+                    <td>{{ task.assignee_name }}</td>
+                    <td>{{ task.status }}</td>
+                    <td class="start-date" data-date="{{ task.startDate }}"></td>
+                    <td class="deadline-date" data-date="{{ task.deadline }}"></td>
+                    <td>{{ task.priority }}</td>
+                    <td>
+                        <a href="{% url 'task-update' task.id %}" class="btn btn-info btn-sm">Update</a>
+                        <form method="post" action="{% url 'task-delete' task.id %}" style="display: inline;" onsubmit="return confirmDelete('{{ task.title }}')">
+                            {% csrf_token %}
+                            <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
 
-                            <form method="post" action="{% url 'task-delete' task.id %}" style="display: inline;" onsubmit="return confirmDelete('{{ task.title }}')">
-                                {% csrf_token %}
+    <!-- Embed tasks data as JSON -->
+    {{ tasks|json_script:"tasks-data" }}
+    <script id="url-patterns" type="application/json">
+        {
+            "update_url": "{% url 'task-update' 0 %}",
+            "delete_url": "{% url 'task-delete' 0 %}"
+        }
+    </script>
+    <script>
+        // Format date to D/M/Y H:i
+        function formatDate(dateString) {
+            var options = { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' };
+            var date = new Date(dateString);
+            return date.toLocaleDateString('en-GB', options).replace(',', '');
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            // Initialize dates
+            document.querySelectorAll('.start-date').forEach(function(element) {
+                element.innerText = formatDate(element.getAttribute('data-date'));
+            });
+            document.querySelectorAll('.deadline-date').forEach(function(element) {
+                element.innerText = formatDate(element.getAttribute('data-date'));
+            });
+
+            // Retrieve tasks data from the script tag
+            const tasksDataScript = document.getElementById('tasks-data');
+            const tasksJson = JSON.parse(tasksDataScript.textContent);
+
+            // Create a lookup map for assignee names
+            const assigneeMap = tasksJson.reduce((map, task) => {
+                map[task.id] = task.assignee_name;
+                return map;
+            }, {});
+
+            const urlPatternsScript = document.getElementById('url-patterns');
+            const urlPatterns = JSON.parse(urlPatternsScript.textContent);
+
+
+            function updateTable(tasks) {
+                var tbody = document.querySelector('#taskTable tbody');
+                tbody.innerHTML = '';
+
+                tasks.forEach(task => {
+                    var row = document.createElement('tr');
+
+                    // Construct URLs
+                    const updateUrl = urlPatterns.update_url.replace('0', task.id);
+                    const deleteUrl = urlPatterns.delete_url.replace('0', task.id);
+
+                    row.innerHTML = `
+                        <td>${task.title}</td>
+                        <td>${task.description}</td>
+                        <td class="assignee-name">${assigneeMap[task.id] || 'N/A'}</td>
+                        <td>${task.status}</td>
+                        <td class="start-date" data-date="${task.startDate}">${formatDate(task.startDate)}</td>
+                        <td class="deadline-date" data-date="${task.deadline}">${formatDate(task.deadline)}</td>
+                        <td>${task.priority}</td>
+                        <td>
+                            <a href="${updateUrl}" class="btn btn-info btn-sm">Update</a>
+                            <form method="post" action="${deleteUrl}" style="display: inline;" onsubmit="return confirmDelete('${task.title}')">
+                                <input type="hidden" name="csrfmiddlewaretoken" value="${document.querySelector('input[name=csrfmiddlewaretoken]')}" />
                                 <button type="submit" class="btn btn-danger btn-sm">Delete</button>
                             </form>
                         </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
+                    `;
 
-        <script>
-            function updateCountdownTimers() {
-                document.querySelectorAll('.countdown-timer').forEach(timer => {
-                    // Get the start date of the task and convert it to a JavaScript Date object
-                    var startdate = new Date(timer.getAttribute('data-start-date'));
-                    var now = new Date();
-
-                    // Calculate the time difference between now and the start date
-                    var timeDiff = startdate - now;
-
-                    // If the task has not started yet, display the countdown timer
-                    if (timeDiff > 0) {
-                        var days = Math.floor(timeDiff / (1000 * 60 * 60 * 24));
-                        var hours = Math.floor((timeDiff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-                        var minutes = Math.floor((timeDiff % (1000 * 60 * 60)) / (1000 * 60));
-                        var seconds = Math.floor((timeDiff % (1000 * 60)) / 1000);
-
-                        // Display the countdown timer in the format: DD:HH:MM:SS
-                        timer.innerText = days + "d " + hours + "h " + minutes + "m " + seconds + "s ";
-                    } else {
-                        // If the task has already started, display a message indicating that it has started
-                        timer.innerText = "Task has started";
-                    }
+                    tbody.appendChild(row);
                 });
             }
 
-            //pop-up alert
-            function confirmDelete(taskTitle) {
-                return confirm('Are you sure you want to delete task "' + taskTitle + '"?');
+            // Sorting functionality
+            function handleSorting(header) {
+                header.addEventListener('click', function() {
+                    var sortBy = header.getAttribute('data-sort');
+                    var sortOrder = header.classList.contains('asc') ? 'desc' : 'asc';
+
+                    // Remove sorting indicator from all headers
+                    document.querySelectorAll('.sortable').forEach(function(elem) {
+                        elem.classList.remove('asc', 'desc');
+                        elem.querySelector('.sort-arrow').innerHTML = '';
+                    });
+
+                    // Set sorting indicator on the clicked header
+                    header.classList.add(sortOrder === 'asc' ? 'asc' : 'desc');
+                    header.querySelector('.sort-arrow').innerHTML = sortOrder === 'asc' ? '&#x25B2;' : '&#x25BC;';
+
+                    // Construct URL with sort and order parameters
+                    var url = `/api/tasks/?sort=${sortBy}&order=${sortOrder}`;
+
+                    // Fetch sorted data from backend
+                    fetch(url, {
+                        method: 'GET',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': '{{ csrf_token }}'
+                        }
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        updateTable(data);
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                    });
+                });
             }
 
-                // Call the updateCountdownTimers function every second to update the countdown timers in real-time
-                setInterval(updateCountdownTimers, 1000);
-        </script>
-        <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.16.0/umd/popper.min.js"></script>
-        <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
-    </body>
+            // Attach sorting event listeners to all sortable headers
+            document.querySelectorAll('.sortable').forEach(function(header) {
+                handleSorting(header);
+            });
+
+            // Default sorting by deadline column
+            var deadlineHeader = document.querySelector('th[data-sort="deadline"]');
+            if (deadlineHeader) {
+                handleSorting(deadlineHeader);
+            }
+        });
+
+        // Confirm deletion
+        function confirmDelete(taskTitle) {
+            return confirm('Are you sure you want to delete task "' + taskTitle + '"?');
+        }
+    </script>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.16.0/umd/popper.min.js"></script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+</body>
 </html>
