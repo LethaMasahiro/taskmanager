@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/5.0/ref/settings/
 """
 
 from pathlib import Path
+from decouple import config
 import os
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -28,7 +29,6 @@ DEBUG = True
 
 ALLOWED_HOSTS = []
 
-#domain name
 DOMAIN_NAME = 'http://localhost:8000'
 
 
@@ -78,6 +78,8 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'backend.wsgi.application'
 
+# Base URL
+BASE_URL = config('BASE_URL', default='http://localhost:8000')
 
 # Database
 # https://docs.djangoproject.com/en/5.0/ref/settings/#databases
@@ -118,7 +120,7 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = 'en-us'
 
-TIME_ZONE = 'Asia/Seoul'
+TIME_ZONE = 'UTC'
 
 USE_I18N = True
 
@@ -136,7 +138,6 @@ STATIC_URL = 'static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Celery settings
-# CELERY_BROKER_URL = 'redis://localhost:6379/0'
 CELERY_BROKER_URL = "redis://redis:6379/0"
 CELERY_RESULT_BACKEND = "redis://redis:6379/0"
 
@@ -148,21 +149,21 @@ CELERY_IMPORTS = (
     'taskmanagerapp.tasks',
 )
 
-#Celery email settings
-EMAIL_BACKEND ='django.core.mail.backends.smtp.EmailBackend'
-#add your host of the email here in this case its Gmail so we are going to use Gmail host
+# Celery email settings
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+
 EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_USE_TLS = True
-#add the port number of the email server
+
 EMAIL_PORT = 587
-#add your gamil here
+
 EMAIL_HOST_USER = 'violalaurastumpf@gmail.com'
-#add your password here
+
 EMAIL_HOST_PASSWORD = 'ijuf frhh zxmo auwp'
-DEFAULT_FROM_EMAIL='Celery <violalaurastumpf@gmail.com>'
+DEFAULT_FROM_EMAIL = 'Celery <violalaurastumpf@gmail.com>'
 
 
-#REST Framework authentication
+# REST Framework authentication
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework.authentication.BasicAuthentication',
@@ -175,5 +176,5 @@ REST_FRAMEWORK = {
 }
 
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:8000",  # or your frontend domain
+    "http://localhost:8000",
 ]

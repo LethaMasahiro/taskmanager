@@ -5,6 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Tasklist</title> 
     <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" />
+    <style>
+        .sortable {
+            cursor: pointer; /* Change cursor to pointer on hover */
+        }
+        .urgent {
+            background-color: rgb(255, 99, 71, 0.8);
+            color: white;
+        }
+    </style>
 </head>
 <body>
     <div class="container">
@@ -18,27 +27,27 @@
         <table id="taskTable" class="table">
             <thead>
                 <tr>
-                    <th class="sortable" data-sort="title">Task Title <span class="sort-arrow"></span></th>
-                    <th>Task Description</th>
+                    <th class="sortable" data-sort="title" style="width: 10%;">Task Title <span class="sort-arrow"></span></th>
+                    <th style="width: 10%;">Task Description</th>
                     <th class="sortable" data-sort="assignee">Assignee <span class="sort-arrow"></span></th>
                     <th class="sortable" data-sort="status">Status <span class="sort-arrow"></span></th>
                     <th class="sortable" data-sort="startDate">Start Date <span class="sort-arrow"></span></th>
                     <th class="sortable" data-sort="deadline">Deadline <span class="sort-arrow"></span></th>
                     <th class="sortable" data-sort="priority">Priority <span class="sort-arrow"></span></th>
-                    <th>Actions</th>
+                    <th style="width: 15%;" >Actions</th>
                 </tr>
             </thead>
             <tbody>
                 {% for task in tasks %}
-                <tr>
+                <tr class="task">
                     <td>{{ task.title }}</td>
                     <td>{{ task.description }}</td>
-                    <td>{{ task.assignee_name }}</td>
+                    <td>{{ task.assignee_username }}</td>
                     <td>{{ task.status }}</td>
                     <td class="start-date" data-date="{{ task.startDate }}"></td>
                     <td class="deadline-date" data-date="{{ task.deadline }}"></td>
                     <td>{{ task.priority }}</td>
-                    <td>
+                    <td style="width: 15%;">
                         <a href="{% url 'task-update' task.id %}" class="btn btn-info btn-sm">Update</a>
                         <form method="post" action="{% url 'task-delete' task.id %}" style="display: inline;" onsubmit="return confirmDelete('{{ task.title }}')">
                             {% csrf_token %}
@@ -80,12 +89,6 @@
             const tasksDataScript = document.getElementById('tasks-data');
             const tasksJson = JSON.parse(tasksDataScript.textContent);
 
-            // Create a lookup map for assignee names
-            const assigneeMap = tasksJson.reduce((map, task) => {
-                map[task.id] = task.assignee_name;
-                return map;
-            }, {});
-
             const urlPatternsScript = document.getElementById('url-patterns');
             const urlPatterns = JSON.parse(urlPatternsScript.textContent);
 
@@ -104,12 +107,12 @@
                     row.innerHTML = `
                         <td>${task.title}</td>
                         <td>${task.description}</td>
-                        <td class="assignee-name">${assigneeMap[task.id] || 'N/A'}</td>
+                        <td class="assignee-name">${task.assignee_username}</td>
                         <td>${task.status}</td>
                         <td class="start-date" data-date="${task.startDate}">${formatDate(task.startDate)}</td>
                         <td class="deadline-date" data-date="${task.deadline}">${formatDate(task.deadline)}</td>
                         <td>${task.priority}</td>
-                        <td>
+                        <td style="width: 10%;">
                             <a href="${updateUrl}" class="btn btn-info btn-sm">Update</a>
                             <form method="post" action="${deleteUrl}" style="display: inline;" onsubmit="return confirmDelete('${task.title}')">
                                 <input type="hidden" name="csrfmiddlewaretoken" value="${document.querySelector('input[name=csrfmiddlewaretoken]')}" />
@@ -120,6 +123,8 @@
 
                     tbody.appendChild(row);
                 });
+
+                updateUrgentClass();
             }
 
             // Sorting functionality
@@ -175,6 +180,33 @@
         function confirmDelete(taskTitle) {
             return confirm('Are you sure you want to delete task "' + taskTitle + '"?');
         }
+    </script>
+    <script>
+
+        function updateUrgentClass() {
+            let rows = document.querySelectorAll('tbody tr');
+            let now = new Date().getTime();
+
+            rows.forEach(row => {
+                let deadline = new Date(row.querySelector('.deadline-date').getAttribute('data-date')).getTime();
+                let timeDiff = deadline - now;
+                console.log("deadline: ", deadline);
+                console.log("now Date: ", now);
+                console.log("TimeDiff: ", timeDiff);
+
+
+                if (timeDiff <= 86400000) { // 24 hours in milliseconds
+                    row.classList.add('urgent');
+                } else {
+                    row.classList.remove('urgent');
+                }
+            });
+        }
+        // Update the deadline highlighter every minute
+        document.addEventListener('DOMContentLoaded', function() {
+            updateUrgentClass();
+            setInterval(updateUrgentClass, 60000); // Update every minute
+        });
     </script>
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.16.0/umd/popper.min.js"></script>

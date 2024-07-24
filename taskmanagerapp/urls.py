@@ -1,17 +1,11 @@
-from django.urls import path, include
-from django.contrib import admin
-from rest_framework.routers import DefaultRouter
-from .views import TaskViewSet, TaskListApiView
+from django.urls import path
+from .views import TaskListApiView
 from rest_framework_simplejwt.views import (
     TokenObtainPairView,
     TokenRefreshView,
 )
 
 from . import views
-
-#REST router
-#router = DefaultRouter()
-#router.register(r'tasks', TaskViewSet)
 
 urlpatterns = [
     path('', views.index, name='home'),
@@ -25,6 +19,8 @@ urlpatterns = [
     path('updatetask/<int:task_id>/', views.task_update, name='task-update'),
     path('deletetask/<int:task_id>/', views.task_delete, name='task-delete'),
     path('api/tasks/', TaskListApiView.as_view(), name='task-list-api'),
+
+    # Database APIs
     path('api/tasks/<int:pk>/', TaskListApiView.as_view(), name='task-detail-api'),
     path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh')

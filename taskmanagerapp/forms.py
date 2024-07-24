@@ -2,13 +2,22 @@ from django import forms
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth.models import User
 
+
 class SignupForm(UserCreationForm):
 
-    email = forms.EmailField(required=True, help_text='Required. Enter a valid email address.')
+    email = forms.EmailField(
+        required=True,
+        help_text='Required. Enter a valid email address.'
+    )
 
-    class Meta: #specifies the model to be used, which is the default User model
+    class Meta:  # Specifies the model to be used, which is the default User model
         model = User
-        fields = ['username', 'email', 'password1', 'password2'] #password2 is the password confirmation
+        fields = [
+            'username',
+            'email',
+            'password1',
+            'password2'
+        ]  # Password2 is the password confirmation
 
     def save(self, commit=True):
         user = super(SignupForm, self).save(commit=False)
@@ -16,6 +25,7 @@ class SignupForm(UserCreationForm):
         if commit:
             user.save()
         return user
+
 
 class LoginForm(forms.Form):
     username = forms.CharField()

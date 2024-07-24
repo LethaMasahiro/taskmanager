@@ -1,6 +1,7 @@
 from django.core.management.base import BaseCommand
 from django.contrib.auth.models import User
 
+
 class Command(BaseCommand):
     help = 'Create a default admin user'
 
@@ -10,12 +11,16 @@ class Command(BaseCommand):
         password = 'adminpw12'
 
         if not User.objects.filter(username=username).exists():
-            User.objects.create_superuser(username=username, email=email, password=password)
+            User.objects.create_superuser(
+                username=username,
+                email=email,
+                password=password
+            )
             self.stdout.write(self.style.SUCCESS('Successfully created admin user'))
         else:
             self.stdout.write(self.style.WARNING('Admin user already exists'))
 
-from django.contrib.auth.models import User
+
 user = User.objects.get(username='bb')
 user.is_superuser = True
 user.is_staff = True

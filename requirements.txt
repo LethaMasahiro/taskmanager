@@ -7,3 +7,5 @@ requests
 djangorestframework-simplejwt
 django-cors-headers
 pytz
+flake8
+python-decouple

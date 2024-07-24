@@ -8,6 +8,10 @@
             .sortable {
                 cursor: pointer; /* Change cursor to pointer on hover */
             }
+            .urgent {
+                background-color: rgb(255, 99, 71, 0.8);
+                color: white;
+            }
         </style>
     </head>
     <body>
@@ -23,9 +27,9 @@
             <table id="taskTable" class="table">
                 <thead>
                     <tr>
-                        <th class="sortable" data-sort="title">Task Title <span class="sort-arrow"></span></th>
-                        <th>Task Description</th>
-                        <th class="sortable" data-sort="status">Status <span class="sort-arrow"></span></th>
+                        <th class="sortable" data-sort="title" style="width: 10%;">Task Title <span class="sort-arrow"></span></th>
+                        <th style="width: 20%;">Task Description</th>
+                        <th class="sortable" data-sort="status" style="width: 20%;">Status <span class="sort-arrow"></span></th>
                         <th class="sortable" data-sort="startDate">Start Date <span class="sort-arrow"></span></th>
                         <th class="sortable" data-sort="deadline">Deadline <span class="sort-arrow"></span></th>
                         <th class="sortable" data-sort="priority">Priority <span class="sort-arrow"></span></th>
@@ -143,6 +147,8 @@
                         tbody.appendChild(row);
                     });
 
+                    updateUrgentClass();
+
                     // Reattach event listeners (especially for status dropdown)
                     attachEventListeners();
                 }
@@ -204,6 +210,33 @@
                 // Sort by deadline column by default on page load
                 var deadlineHeader = document.querySelector('th[data-sort="deadline"]');
                 handleSorting(deadlineHeader);
+            });
+        </script>
+        <script>
+
+            function updateUrgentClass() {
+                let rows = document.querySelectorAll('tbody tr');
+                let now = new Date().getTime();
+
+                rows.forEach(row => {
+                    let deadline = new Date(row.querySelector('.deadline-date').getAttribute('data-date')).getTime();
+                    let timeDiff = deadline - now;
+                    console.log("deadline: ", deadline);
+                    console.log("now Date: ", now);
+                    console.log("TimeDiff: ", timeDiff);
+
+
+                    if (timeDiff <= 86400000) { // 24 hours in milliseconds
+                        row.classList.add('urgent');
+                    } else {
+                        row.classList.remove('urgent');
+                    }
+                });
+            }
+            // Update the deadline highlighter every minute
+            document.addEventListener('DOMContentLoaded', function() {
+                updateUrgentClass();
+                setInterval(updateUrgentClass, 60000); // Update every minute
             });
         </script>
         <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>

@@ -29,6 +29,7 @@ services:
       - DATABASE_PASSWORD=${DATABASE_PASSWORD}
       - DATABASE_HOST=db  # Ensure this matches the PostgreSQL service name
       - DATABASE_PORT=${DATABASE_PORT}
+      - BASE_URL=${BASE_URL}
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
     depends_on:
