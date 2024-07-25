@@ -1,7 +1,10 @@
-<h1>Login</h1>
-<form method="POST">
-    {% csrf_token %}
-    {{form.as_p}}
-    <button type="submit">Login</button>
-    <a href="{% url 'signup' %}">Create a New Account</a>
-</form>
+<!DOCTYPE html>
+<html>
+    <h1>Login</h1>
+    <form method="POST">
+        {% csrf_token %}
+        {{form.as_p}}
+        <button type="submit">Login</button>
+        <a href="{% url 'signup' %}">Create a New Account</a>
+    </form>
+</html>

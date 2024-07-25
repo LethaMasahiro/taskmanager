@@ -1,3 +1,4 @@
+<!DOCTYPE html>
 <html lang="en">
     <head>
         <meta charset="UTF-8" />
@@ -6,7 +7,7 @@
         <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" />
         <style>
             .sortable {
-                cursor: pointer; /* Change cursor to pointer on hover */
+                cursor: pointer;
             }
             .urgent {
                 background-color: rgb(255, 99, 71, 0.8);
@@ -58,7 +59,6 @@
             </table>
         </div>
 
-        <!-- Include this inside my <body> tag or just before my script -->
         {{ status_choices|json_script:"status-choices" }}
         <script status_choices="{{ status_choices }}">
             const data = document.currentScript.dataset;
@@ -118,11 +118,9 @@
                     // Clear existing rows
                     tbody.innerHTML = '';
 
-                    // Add rows based on sorted data
                     tasks.forEach(task => {
                         var row = document.createElement('tr');
 
-                        // Generate status options dynamically
                         var statusOptions = '';
                         context.status_choices.forEach(choice => {
                             var selected = choice.id === task.status ? 'selected' : '';
@@ -143,13 +141,10 @@
                             <td>${task.priority}</td>
                         `;
 
-                        // Append row to tbody
                         tbody.appendChild(row);
                     });
 
                     updateUrgentClass();
-
-                    // Reattach event listeners (especially for status dropdown)
                     attachEventListeners();
                 }
 
@@ -171,7 +166,6 @@
                         header.classList.add(sortOrder === 'asc' ? 'asc' : 'desc');
                         header.querySelector('.sort-arrow').innerHTML = sortOrder === 'asc' ? '&#x25B2;' : '&#x25BC;';
 
-                        // Construct URL with sort and order parameters
                         var url = `/api/tasks/?assignee=${assignee}&sort=${sortBy}&order=${sortOrder}`;
 
                         // Fetch sorted data from backend
@@ -180,7 +174,6 @@
                             headers: {
                                 'Content-Type': 'application/json',
                                 'X-CSRFToken': '{{ csrf_token }}'
-                                // Add any other headers as needed
                             }
                         })
                         .then(response => {
@@ -191,9 +184,6 @@
                             }
                         })
                         .then(data => {
-                            // Update table with sorted data (assuming you update this part based on your API response)
-                            console.log('Sorted data:', data);
-                            // Example: Replace table content with sorted data
                             updateTable(data);
                         })
                         .catch(error => {
@@ -236,7 +226,7 @@
             // Update the deadline highlighter every minute
             document.addEventListener('DOMContentLoaded', function() {
                 updateUrgentClass();
-                setInterval(updateUrgentClass, 60000); // Update every minute
+                setInterval(updateUrgentClass, 60000);
             });
         </script>
         <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>

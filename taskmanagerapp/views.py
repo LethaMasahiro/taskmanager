@@ -339,8 +339,6 @@ class TaskViewSet(viewsets.ModelViewSet):
     queryset = Task.objects.all()
     serializer_class = TaskSerializer
 
-# TODO: Allow ascending and descending sort
-
 class TaskListApiView(APIView):
     # Add permission to check if user is authenticated
     permission_classes = [permissions.IsAuthenticated]
