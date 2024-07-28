@@ -1,43 +1,124 @@
+from datetime import datetime, timedelta
+import pytz
+import requests
+from dateutil.parser import isoparse
+
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.contrib.auth.models import User
+from django.utils import timezone
+from django.utils.timezone import now, localtime
+from django.conf import settings
+
+from rest_framework import viewsets, status, permissions
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework_simplejwt.tokens import RefreshToken
+
 from .forms import SignupForm, LoginForm
 from .models import Task
 from .tasks import send_task_email_to_assignee_created, send_task_email_to_assignee_updated, notify_superusers_of_task_updated, warn_users_one_day_before_deadline
-from rest_framework import viewsets
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status
-from rest_framework import permissions
 from .serializers import TaskSerializer
-from rest_framework_simplejwt.tokens import RefreshToken
-from datetime import datetime, timedelta
-from django.utils.timezone import now
-from django.utils import timezone
-import pytz
-import requests
-from django.conf import settings
 
 
-# Homepage
-def index(request):
-    if not (request.user.is_superuser):
-        return redirect('tasklist')
-    return render(request, 'index.html')
+# Helper Functions
+def get_auth_headers(user):
+    refresh = RefreshToken.for_user(user)
+    access_token = str(refresh.access_token)
+    return {'Authorization': f'Bearer {access_token}'}
+
+
+def check_superuser(user):
+    if not user.is_superuser:
+        raise PermissionError('Permission denied.')
+
+    
+def convert_to_utc_aware_datetime(date_str):
+    try:
+        # Parse the date string into a naive datetime object
+        naive_datetime = datetime.fromisoformat(date_str)
+
+        # Localize the naive datetime to the Korean timezone
+        korean_timezone = pytz.timezone('Asia/Seoul')
+        korean_aware_datetime = korean_timezone.localize(naive_datetime)
+
+        # Convert the localized datetime to UTC
+        utc_aware_datetime = korean_aware_datetime.astimezone(pytz.UTC)
+
+        # Format the datetime to the required format
+        utc_aware_datetime_str = utc_aware_datetime.strftime('%Y-%m-%dT%H:%M:%SZ')
+
+        return utc_aware_datetime_str
+    except ValueError:
+        raise ValueError("Invalid date format: Ensure it is ISO format.")
+
+
+def handle_api_response(response, success_redirect, error_template, request, data=None):
+    try:
+        response_data = response.json()
+    except ValueError:
+        response_data = {"error": "Failed to decode response as JSON."}
+        response_status = 500
+    else:
+        response_status = response.status_code
+
+    if response_status in [200, 201, 204]:
+        return redirect(success_redirect)
+    else:
+        print(f"Error: {response_status} - {response.text}")
+        if data:
+            print(f"Sent Data: {data}")
+        return render(request, error_template, {'error': response_data})
+
+
+def notify_assignee_email(task, start_date_aware, deadline_aware, is_update=False):
+    if is_update:
+        send_task_email_to_assignee_updated.delay(
+            task.assignee.email,
+            task.assignee.username,
+            task.title
+        )
+    else:
+        send_task_email_to_assignee_created.delay(
+            task.assignee.email,
+            task.assignee.username,
+            task.title,
+            start_date_aware,
+            deadline_aware
+        )
+
+
+def schedule_warning_email(deadline_aware, assignee_email, assignee_username, task_title):
+    notify_time = deadline_aware - timedelta(days=1)
+    if notify_time > timezone.now():
+        warn_users_one_day_before_deadline.apply_async(
+            (
+                assignee_email,
+                assignee_username,
+                task_title,
+                deadline_aware
+            ),
+            eta=notify_time
+        )
+    else:
+        print("Deadline is too soon to schedule a warning email.")
+
+
+# Decorators
+def admin_required(view_func):
+    return user_passes_test(lambda user: user.is_superuser)(view_func)
 
 
 def is_admin(user):
     return user.is_superuser
 
 
-def admin_required(view_func):
-    decorated_view_func = login_required(
-        user_passes_test(
-            lambda user: user.is_superuser
-        )(view_func)
-    )
-    return decorated_view_func
+# Views
+def index(request):
+    if not (request.user.is_superuser):
+        return redirect('tasklist')
+    return render(request, 'index.html')
 
 
 def user_login(request):
@@ -83,9 +164,8 @@ def admin_index(request):
 @admin_required
 def admin_tasklist(request):
     # Generate JWT token for the user
-    refresh = RefreshToken.for_user(request.user)
-    access_token = str(refresh.access_token)
-    headers = {'Authorization': f'Bearer {access_token}'}
+    headers = get_auth_headers(request.user)
+    current_time = now()
 
     response = requests.get(
         f'{settings.BASE_URL}/api/tasks/',
@@ -98,7 +178,6 @@ def admin_tasklist(request):
             assignee_id = task['assignee']
             assignee = User.objects.get(id=assignee_id)
             task['assignee_name'] = assignee.username
-            current_time = now()
         return render(
             request,
             'tasklist_admin.html',
@@ -126,9 +205,7 @@ def get_status_choices():
 def user_tasklist(request):
     assignee_id = request.GET.get('assignee', request.user.id)
 
-    refresh = RefreshToken.for_user(request.user)
-    access_token = str(refresh.access_token)
-    headers = {'Authorization': f'Bearer {access_token}'}
+    headers = get_auth_headers(request.user)
 
     response = requests.get(
         f'{settings.BASE_URL}/api/tasks/?assignee={assignee_id}',
@@ -141,7 +218,6 @@ def user_tasklist(request):
         current_time = now()
         return render(request, 'tasklist.html', {
             'tasks': tasks,
-            'access_token': access_token,
             'status_choices': status_choices,
             'current_time': current_time
         })
@@ -162,8 +238,9 @@ def task_create(request):
         end_date_str = request.POST.get('deadline')
 
         try:
-            start_date = datetime.fromisoformat(start_date_str).replace(tzinfo=pytz.UTC)
-            end_date = datetime.fromisoformat(end_date_str).replace(tzinfo=pytz.UTC)
+            start_date = convert_to_utc_aware_datetime(start_date_str)
+            end_date = convert_to_utc_aware_datetime(end_date_str)
+
         except ValueError:
             return render(
                 request,
@@ -176,41 +253,24 @@ def task_create(request):
             'description': request.POST.get('description'),
             'status': request.POST.get('status'),
             'assignee': request.POST.get('assignee'),
-            'startDate': start_date.isoformat(),
-            'deadline': end_date.isoformat(),
+            'startDate': start_date,
+            'deadline': end_date,
             'priority': request.POST.get('priority')
         }
 
         # Generate JWT token for the user
-        refresh = RefreshToken.for_user(request.user)
-        access_token = str(refresh.access_token)
-        headers = {'Authorization': f'Bearer {access_token}'}
-
+        headers = get_auth_headers(request.user)
         response = requests.post(
             f'{settings.BASE_URL}/api/tasks/',
-            data=data, headers=headers
+            data=data,
+            headers=headers
         )
-
-        try:
-            response_data = response.json()
-            print('Response data: ', response_data)
-        except ValueError as e:
-            print(f"JSON decode error: {e}")
-            response_data = {"error": "Failed to decode response as JSON."}
-            response_status = 500  # Internal Server Error
-        else:
-            response_status = response.status_code
-
-        if response_status == 201:
-            return redirect('admin-tasklist')
-        else:
-            print(f"Error: {response_status} - {response.text}")
-            print(f"Sent Data: {data}")
-            return render(
-                request,
-                'tasklist_create.html',
-                {'error': response_data}
-            )
+        return handle_api_response(
+            response,
+            'admin-tasklist',
+            'tasklist_create.html',
+            request, data
+        )
 
     else:
         users = User.objects.all()
@@ -247,50 +307,39 @@ def task_update(request, task_id):
         }
 
         # Filter out any fields that are empty or not present
-        data = {
-            k: v for k, v in data.items() if v is not None and v.strip() != ''
-        }
+        data = {k: v for k, v in data.items() if v}
 
-        # Generate JWT token for the user
-        refresh = RefreshToken.for_user(request.user)
-        access_token = str(refresh.access_token)
-        headers = {
-            'Authorization': f'Bearer {access_token}'
-        }
+        headers = get_auth_headers(request.user)
 
-        # Convert datetime strings to timezone-aware datetime objects
-        try:
-            if 'startDate' in data:
-                data['startDate'] = datetime.fromisoformat(start_date_str).replace(tzinfo=pytz.UTC).isoformat()
-            if 'deadline' in data:
-                data['deadline'] = datetime.fromisoformat(end_date_str).replace(tzinfo=pytz.UTC).isoformat()
-        except ValueError:
-            return render(
-                request,
-                'tasklist_create.html',
-                {'error': 'Invalid date format'}
-            )
+        if 'startDate' in data:
+            data['startDate'] = convert_to_utc_aware_datetime(start_date_str)
+
+        if 'deadline' in data:
+            data['deadline'] = convert_to_utc_aware_datetime(end_date_str)
 
         response = requests.patch(
             f'{settings.BASE_URL}/api/tasks/{task_id}/',
-            json=data, headers=headers
+            json=data,
+            headers=headers
         )
-
-        if response.status_code == 200:
-            return redirect('admin-tasklist')
-        else:
-            print(f"Error: {response.status_code} - {response.text}")
-            print(f"Sent Data: {data}")
-            return render(
-                request,
-                'tasklist_create.html',
-                {'error': response.json()}
-            )
+        return handle_api_response(
+            response,
+            'admin-tasklist',
+            'tasklist_update.html',
+            request, data
+        )
 
     else:
         users = User.objects.all()
         statuses = Task.Status.choices
         priorities = Task.Priority.choices
+        korean_timezone = pytz.timezone('Asia/Seoul')
+        current_task.startDate = localtime(current_task.startDate).astimezone(korean_timezone)
+        current_task.deadline = localtime(current_task.deadline).astimezone(korean_timezone)
+
+        # Format the datetimes as naive local datetime strings
+        start_date_str = current_task.startDate.strftime('%Y-%m-%dT%H:%M')
+        deadline_date_str = current_task.deadline.strftime('%Y-%m-%dT%H:%M')
         return render(
             request,
             'tasklist_update.html',
@@ -298,7 +347,9 @@ def task_update(request, task_id):
                 'users': users,
                 'statuses': statuses,
                 'priorities': priorities,
-                'task': current_task
+                'task': current_task,
+                'start_date_str': start_date_str,
+                'deadline_date_str': deadline_date_str
             }
         )
 
@@ -307,31 +358,29 @@ def task_update(request, task_id):
 @admin_required
 def task_delete(request, task_id):
     if request.method == 'POST':
-        # Generate JWT token for the user
-        refresh = RefreshToken.for_user(request.user)
-        access_token = str(refresh.access_token)
-        headers = {
-            'Authorization': f'Bearer {access_token}'
-        }
+
+        headers = get_auth_headers(request.user)
 
         response = requests.delete(
             f'{settings.BASE_URL}/api/tasks/{task_id}/',
             headers=headers
         )
 
-        if response.status_code == 204:
+        if response.status_code in [200, 204]:
             return redirect('admin-tasklist')
-
         else:
-            print(f"Error: {response.status_code} - {response.text}")
+            try:
+                error_message = response.json()
+            except ValueError:
+                error_message = {'error': 'Failed to delete task.'}
+
             return render(
                 request,
-                'tasklist.html',
-                {'error': 'Failed to retrieve tasks'}
+                'tasklist_admin.html',
+                {'error': error_message}
             )
     else:
-        current_task = get_object_or_404(Task, pk=task_id)
-        return render(request, 'tasklist_delete.html', {'task': current_task})
+        return redirect('admin-tasklist')
 
 
 # REST framework viewset
@@ -339,9 +388,13 @@ class TaskViewSet(viewsets.ModelViewSet):
     queryset = Task.objects.all()
     serializer_class = TaskSerializer
 
+
 class TaskListApiView(APIView):
-    # Add permission to check if user is authenticated
     permission_classes = [permissions.IsAuthenticated]
+
+    # Helper functions
+    def get_task(self, pk):
+        return get_object_or_404(Task, pk=pk)
 
     # List all todos
     def get(self, request, *args, **kwargs):
@@ -377,133 +430,83 @@ class TaskListApiView(APIView):
 
     # Create a Todo
     def post(self, request, *args, **kwargs):
-        if not request.user.is_superuser:
-            return Response(
-                {'detail': 'Permission denied.'},
-                status=status.HTTP_403_FORBIDDEN
-            )
+        try:
+            check_superuser(request.user)
 
-        if request.content_type == 'application/json':
-            data = request.data
-        else:
-            data = request.POST
-        serializer = TaskSerializer(data=data)
-
-        if serializer.is_valid():
-            task = serializer.save()
-            response_data = serializer.data
-
-            # Convert startDate and deadline to timezone-aware datetimes
-            start_date_str = data['startDate']
-            deadline_str = data['deadline']
-
-            try:
-                start_date_aware = datetime.fromisoformat(start_date_str).replace(tzinfo=pytz.UTC)
-                deadline_aware = datetime.fromisoformat(deadline_str).replace(tzinfo=pytz.UTC)
-            except ValueError:
-                return Response(
-                    {'error': 'Invalid date format'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-
-            response_data['assignee_email'] = task.assignee.email
-
-            send_task_email_to_assignee_created.delay(
-                task.assignee.email,
-                task.assignee.username,
-                task.title,
-                start_date_aware,
-                deadline_aware
-            )
-
-            # Calculate notify_time as 24 hours before the task deadline
-            notify_time = deadline_aware - timedelta(days=1)
-
-            if notify_time > timezone.now():
-                warn_users_one_day_before_deadline.apply_async(
-                    (
-                        task.assignee.email,
-                        task.assignee.username,
-                        task.title,
-                        deadline_aware
-                    ),
-                    eta=notify_time
-                )
+            if request.content_type == 'application/json':
+                data = request.data
             else:
-                print("Deadline is too soon to schedule a warning email.")
+                data = request.POST
+            serializer = TaskSerializer(data=data)
 
-            print(response_data)
+            if serializer.is_valid():
+                task = serializer.save()
+                response_data = serializer.data
 
-            return Response(response_data, status=status.HTTP_201_CREATED)
-        else:
-            print(f"Validation errors: {serializer.errors}")
-            return Response(
-                serializer.errors,
-                status=status.HTTP_400_BAD_REQUEST
-            )
+                response_data['assignee_email'] = task.assignee.email
+
+                notify_assignee_email(
+                    task,
+                    task.startDate,
+                    task.deadline
+                )
+                schedule_warning_email(
+                    task.deadline,
+                    task.assignee.email,
+                    task.assignee.username,
+                    task.title
+                )
+
+                return Response(response_data, status=status.HTTP_201_CREATED)
+            else:
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        except PermissionError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_403_FORBIDDEN)
+        except ValueError as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
     # Update an existing task
 
     def put(self, request, *args, **kwargs):
-        if not request.user.is_superuser:
-            return Response(
-                {'detail': 'Permission denied.'},
-                status=status.HTTP_403_FORBIDDEN
-            )
+        try:
+            # check_superuser(request.user)
+            task = self.get_task(kwargs.get('pk'))
+            serializer = TaskSerializer(task, data=request.data, partial=False)
 
-        task = self.get_task(kwargs.get('pk'))
-        serializer = TaskSerializer(task, data=request.data, partial=False)
-        if serializer.is_valid():
-            serializer.save()
-            response_data = serializer.data
+            if serializer.is_valid():
+                serializer.save()
+                response_data = serializer.data
 
-            start_date_str = request.data['startDate']
-            deadline_str = request.data['deadline']
+                start_date_str = request.data['startDate']
+                deadline_str = request.data['deadline']
 
-            try:
-                start_date_aware = datetime.fromisoformat(start_date_str).replace(tzinfo=pytz.UTC)
-                deadline_aware = datetime.fromisoformat(deadline_str).replace(tzinfo=pytz.UTC)
-            except ValueError:
-                return Response(
-                    {'error': 'Invalid date format'},
-                    status=status.HTTP_400_BAD_REQUEST
+                response_data['assignee_email'] = task.assignee.email
+
+                notify_assignee_email(
+                    task,
+                    start_date_str,
+                    deadline_str,
+                    is_update=True
+                )
+                schedule_warning_email(
+                    isoparse(deadline_str),
+                    task.assignee.email,
+                    task.assignee.username,
+                    task.title
                 )
 
-            response_data['assignee_email'] = task.assignee.email
-
-            # Notify the assignee
-            send_task_email_to_assignee_created.delay(
-                task.assignee.email,
-                task.assignee.username,
-                task.title,
-                start_date_aware,
-                deadline_aware
-            )
-
-            # Schedule deadline warning task
-            notify_time = deadline_aware - timedelta(days=1)
-
-            if notify_time > timezone.now():
-                warn_users_one_day_before_deadline.apply_async(
-                    (
-                        task.assignee.email,
-                        task.assignee.username,
-                        task.title,
-                        deadline_aware
-                    ),
-                    eta=notify_time
-                )
+                return Response(response_data, status=status.HTTP_200_OK)
             else:
-                print("Deadline is too soon to schedule a warning email.")
-
-            return Response(response_data, status=status.HTTP_200_OK)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        except PermissionError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_403_FORBIDDEN)
+        except ValueError as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
     # Partially update a task
     def patch(self, request, *args, **kwargs):
         task = self.get_task(kwargs.get('pk'))
 
-        # Check if the user is either the assignee or a superuser
         if not request.user.is_superuser and task.assignee != request.user:
             return Response(
                 {'detail': 'Permission denied.'},
@@ -516,47 +519,31 @@ class TaskListApiView(APIView):
             response_data = serializer.data
 
             deadline_str = request.data.get('deadline')
-
-            try:
-                if deadline_str:
-                    deadline_aware = datetime.fromisoformat(deadline_str).replace(tzinfo=pytz.UTC)
-            except ValueError:
-                return Response(
-                    {'error': 'Invalid date format'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-
-            response_data['assignee_email'] = task.assignee.email
-
-            # Notify the assignee
-            send_task_email_to_assignee_updated.delay(
-                task.assignee.email,
-                task.assignee.username,
-                task.title
-            )
-
-            # Notify superusers
-            notify_superusers_of_task_updated.delay(
-                task.title,
-                request.user.username
-            )
-
-            # Schedule deadline warning task
             if deadline_str:
-                notify_time = deadline_aware - timedelta(days=1)
+                try:
+                    response_data['assignee_email'] = task.assignee.email
 
-                if notify_time > timezone.now():
-                    warn_users_one_day_before_deadline.apply_async(
-                        (
-                            task.assignee.email,
-                            task.assignee.username,
-                            task.title,
-                            deadline_aware
-                        ),
-                        eta=notify_time
+                    send_task_email_to_assignee_updated.delay(
+                        task.assignee.email,
+                        task.assignee.username,
+                        task.title
                     )
-                else:
-                    print("Deadline is too soon to schedule a warning email.")
+                    notify_superusers_of_task_updated.delay(
+                        task.title,
+                        request.user.username
+                    )
+                    schedule_warning_email(
+                        isoparse(deadline_str),
+                        task.assignee.email,
+                        task.assignee.username,
+                        task.title
+                    )
+
+                except ValueError:
+                    return Response(
+                        {'error': 'Invalid date format'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
 
             return Response(response_data, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -572,24 +559,3 @@ class TaskListApiView(APIView):
         task = self.get_task(kwargs.get('pk'))
         task.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
-
-    # Self method
-    def get_task(self, pk):
-        return get_object_or_404(Task, pk=pk)
-
-    def schedule_warning_email(self, task, deadline):
-        # Calculate notify_time as 24 hours before the task deadline
-        notify_time = deadline - timedelta(days=1)
-
-        if notify_time > datetime.now():
-            warn_users_one_day_before_deadline.apply_async(
-                (
-                    task.assignee.email,
-                    task.assignee.username,
-                    task.title,
-                    task.deadline
-                ),
-                eta=notify_time
-            )
-        else:
-            print("Deadline is too soon to schedule a warning email.")

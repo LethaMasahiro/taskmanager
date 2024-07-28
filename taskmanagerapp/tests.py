@@ -1,10 +1,12 @@
-from django.test import TestCase, Client
+from django.test import TestCase, Client, TransactionTestCase
+from rest_framework.test import APIClient
 from taskmanagerapp.models import Task
 from django.contrib.auth.models import User
 from django.urls import reverse
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.utils import timezone
-from datetime import datetime
+from datetime import datetime, timedelta
+import pytz
 from taskmanagerapp.forms import SignupForm, LoginForm
 from django.contrib.auth import authenticate
 import json
@@ -50,13 +52,17 @@ class TaskModelTest (TestCase):
         self.assertEqual(self.task_model.priority, 'High')
 
 
-class TaskViewTest (TestCase):
+class TaskViewTest (TransactionTestCase):
 
     def setUp(self):
         # Setup run before every test method.
         self.client = Client()
         self.user = User.objects.create_user(
             username='bb',
+            password='12345678'
+        )
+        self.superuser = User.objects.create_superuser(
+            username='aa',
             password='12345678'
         )
 
@@ -67,17 +73,13 @@ class TaskViewTest (TestCase):
             id=5
         )
 
-        self.superuser = User.objects.create_superuser(
-            username='aa',
-            password='12345678'
-        )
         self.task_model = Task.objects.create(
             title="Unit Test 1",
             description="This is the first unit test",
             status="To Do",
             assignee=self.user,
-            startDate="2024-07-22T00:00:00Z",
-            deadline="2024-07-23T00:00:00Z",
+            startDate=datetime(2024, 7, 22, 0, 0, 0, tzinfo=pytz.UTC),
+            deadline=datetime(2024, 7, 23, 0, 0, 0, tzinfo=pytz.UTC),
             priority="High"
         )
         self.task_model_2 = Task.objects.create(
@@ -138,6 +140,50 @@ class TaskViewTest (TestCase):
             msg_prefix="Expected the task list to be empty but found tasks."
         )
 
+    def convert_to_utc_aware_datetime(self, date_str):
+        # Parse the date string to a datetime object
+        naive_datetime = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+
+        # If the datetime object is naive, localize it to the correct timezone
+        if naive_datetime.tzinfo is None:
+            korean_timezone = pytz.timezone('Asia/Seoul')
+            korean_aware_datetime = korean_timezone.localize(naive_datetime)
+            utc_aware_datetime = korean_aware_datetime.astimezone(pytz.UTC)
+        else:
+            utc_aware_datetime = naive_datetime.astimezone(pytz.UTC)
+        return utc_aware_datetime
+
+    def test_task_create(self):
+        # Log in as superuser
+        self.client.login(username='aa', password='12345678')
+
+        start_date_str = (datetime.now() + timedelta(days=1)).isoformat() + 'Z'
+        deadline_str = (datetime.now() + timedelta(days=2)).isoformat() + 'Z'
+
+        request_data = {
+            'title': 'New Task',
+            'description': 'New task description',
+            'status': 'To Do',
+            'assignee': self.user.id,
+            'startDate': start_date_str,
+            'deadline': deadline_str,
+            'priority': 'Low'
+        }
+
+        response = self.client.post(
+            f'{settings.BASE_URL}/api/tasks/',
+            data=json.dumps(request_data),
+            content_type='application/json',
+            HTTP_AUTHORIZATION=f'Bearer {str(RefreshToken.for_user(self.superuser).access_token)}'
+        )
+
+        self.assertEqual(response.status_code, 201)
+        task = Task.objects.get(title="New Task")
+        self.assertEqual(task.title, 'New Task')
+        self.assertEqual(task.assignee, self.user)
+        self.assertEqual(task.startDate, self.convert_to_utc_aware_datetime(start_date_str))
+        self.assertEqual(task.deadline, self.convert_to_utc_aware_datetime(deadline_str))
+
     def test_update_task(self):
         print('test update task')
 
@@ -145,16 +191,16 @@ class TaskViewTest (TestCase):
         self.client.login(username='aa', password='12345678')
 
         # Timezone-aware initial datetime
-        start_date_aware = timezone.make_aware(datetime(2024, 7, 22, 0, 0, 0))
-        deadline_aware = timezone.make_aware(datetime(2024, 7, 23, 0, 0, 0))
+        start_date_aware = (datetime.now() + timedelta(days=1)).isoformat() + 'Z'
+        deadline_aware = (datetime.now() + timedelta(days=2)).isoformat() + 'Z'
 
         initial_task_data = {
             'title': 'Initial Title',
             'description': 'Initial description',
             'status': 'To Do',
             'assignee': self.user_with_id_5.id,
-            'startDate': start_date_aware.isoformat(),
-            'deadline': deadline_aware.isoformat(),
+            'startDate': start_date_aware,
+            'deadline': deadline_aware,
             'priority': 'High'
         }
 
@@ -168,16 +214,16 @@ class TaskViewTest (TestCase):
         task_id = response.json()['id']
 
         # Updated data with the same timezone-aware datetime values
-        updated_start_date_aware = timezone.make_aware(datetime(2024, 7, 22, 0, 0, 0))
-        updated_deadline_aware = timezone.make_aware(datetime(2024, 7, 23, 0, 0, 0))
+        updated_start_date_aware = (datetime.now() + timedelta(days=2)).isoformat() + 'Z'
+        updated_deadline_aware = (datetime.now() + timedelta(days=3)).isoformat() + 'Z'
 
         updated_task_data = {
             'title': 'Updated Title',
             'description': 'Updated description',
             'status': 'In Progress',
             'assignee': self.user.id,
-            'startDate': updated_start_date_aware.isoformat(),
-            'deadline': updated_deadline_aware.isoformat(),
+            'startDate': updated_start_date_aware,
+            'deadline': updated_deadline_aware,
             'priority': 'Medium'
         }
 
@@ -188,7 +234,6 @@ class TaskViewTest (TestCase):
             content_type='application/json',
             HTTP_AUTHORIZATION=f'Bearer {str(RefreshToken.for_user(self.superuser).access_token)}'
         )
-
         self.assertEqual(response.status_code, 200)
 
         task = Task.objects.get(id=task_id)
@@ -196,8 +241,8 @@ class TaskViewTest (TestCase):
         self.assertEqual(task.description, 'Updated description')
         self.assertEqual(task.status, 'In Progress')
         self.assertEqual(task.assignee, self.user)
-        self.assertEqual(task.startDate, updated_start_date_aware)
-        self.assertEqual(task.deadline, updated_deadline_aware)
+        self.assertEqual(task.startDate, self.convert_to_utc_aware_datetime(updated_start_date_aware))
+        self.assertEqual(task.deadline, self.convert_to_utc_aware_datetime(updated_deadline_aware))
         self.assertEqual(task.priority, 'Medium')
 
     def test_update_status(self):
@@ -210,6 +255,9 @@ class TaskViewTest (TestCase):
         task = Task.objects.get(title="Unit Test 1", assignee=self.user)
         task_id = task.id
 
+        start_date_aware = task.startDate.strftime('%Y-%m-%dT%H:%M:%SZ')
+        deadline_aware = task.deadline.strftime('%Y-%m-%dT%H:%M:%SZ')
+
         updated_status = 'In Progress'
 
         updated_status_task_data = {
@@ -217,8 +265,8 @@ class TaskViewTest (TestCase):
             'description': task.description,
             'status': updated_status,
             'assignee': task.assignee.id,
-            'startDate': task.startDate.isoformat(),
-            'deadline': task.deadline.isoformat(),
+            'startDate': start_date_aware,
+            'deadline': deadline_aware,
             'priority': task.priority
         }
 

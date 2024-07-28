@@ -38,12 +38,12 @@
             </div>
             <div class="form-group">
                 <label for="taskStartDate">Start Date:</label>
-                <input type="datetime-local" class="form-control" id="taskStartDate" name="startDate" value="{{ task.startDate|date:'Y-m-d\\TH:i' }}" required />
+                <input type="datetime-local" class="form-control" id="taskStartDate" name="startDate" value="{{ start_date_str }}" required />
             </div>
             <div class="form-group">
                 <label for="taskDeadline">Deadline:</label>
-                <input type="datetime-local" class="form-control" id="taskDeadline" name="deadline" value="{{ task.deadline|date:'Y-m-d\\TH:i' }}" required />
-            </div>
+                <input type="datetime-local" class="form-control" id="taskDeadline" name="deadline" value="{{ deadline_date_str }}" required />
+            </div>            
             <div class="form-group">
                 <label for="taskPriority">Priority:</label>
                 <select class="form-control" id="taskPriority" name="priority">

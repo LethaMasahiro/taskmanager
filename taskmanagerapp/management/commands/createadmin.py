@@ -21,7 +21,7 @@ class Command(BaseCommand):
             self.stdout.write(self.style.WARNING('Admin user already exists'))
 
 
-user = User.objects.get(username='bb')
+user = User.objects.get(username='viola')
 user.is_superuser = True
 user.is_staff = True
 user.save()
