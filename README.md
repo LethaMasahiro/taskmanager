@@ -22,3 +22,4 @@ password: abcdefgh12
 4. The hardest part about this project was actually the management of timezones. For me, it's still quite unintuitive how datetimes are saved in Django, so I had a lot of difficulties enforcing my architecture. This is also one of the reasons why the code might look more complicated than it actually, especially in views.py and in my unit tests. I would like to work more on it and include dynamic timezones, but for now I am just glad that the timezone conversion works for Korea.
 
 If you have any questions, feel free to reach out to me!
+You can also check out my Obsidian documentation in the file directory (documentation), where I collected and documented my whole process over the last weeks in markdown files that can be important in an Obsidian project, my favorite brainstorming tool.
